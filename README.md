@@ -10,7 +10,7 @@ I built this project to help predict where stock prices might go over the next 5
 *   **Advanced AI**: It uses a mix of deep learning models (LSTM, CNN) to find patterns that are hard to see with the naked eye.
 *   **Risk Assessment**: It gives you a clear "Best Case" and "Worst Case" scenario so you know the risks.
 
-## The "Secret Sauce" (Features)
+## The Features
 
 The model doesn't just guess; it learns from 11 specific features:
 1.  **Stock Price** (Close): The main trend.
