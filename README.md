@@ -1,4 +1,5 @@
 # Stock Predictor
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://xvaxbbzdgb2rhdxylpn9ez.streamlit.app/)<--- Click here to open it up
 
 I built this project to help predict where stock prices might go over the next 5 years. Instead of just looking at the stock price history, it actually looks at the bigger picture—things like interest rates, inflation, and GDP—to make smarter forecasts.
 
