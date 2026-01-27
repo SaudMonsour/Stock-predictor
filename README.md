@@ -21,19 +21,3 @@ The model doesn't just guess; it learns from 11 specific features:
 6.  **Market Fear (VIX)**: Are investors panicked or calm?
 7.  **S&P 500 Performance**: How the general market is doing.
 *(Plus 4 other calculated financial metrics)*
-
-## How to run it
-
-1.  **Install the requirements**:
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-2.  **Start the app**:
-    ```bash
-    streamlit run app.py
-    ```
-
-## How to use it
-
-Once the app is running, just pick a stock from the list on the left (like Apple or Tesla). The system will automatically download the data, train a new model for that specific stock right then and there, and show you the prediction.
