@@ -78,7 +78,7 @@ run_prediction = st.sidebar.button("RUN PREDICTION MODEL")
 with st.spinner('ESTABLISHING DATALINK...'):
     stock_data, sp500_data = engine.get_stock_data(selected_ticker)
 
-if stock_data is not None:
+if stock_data is not None and not stock_data.empty:
     # Render header with selected ticker
     ui.render_header(selected_ticker)
     
@@ -252,3 +252,6 @@ if stock_data is not None:
         st.markdown("---")
         ui.plot_chart(stock_data)
         st.info("INITIATE PREDICTION MODEL FROM SIDEBAR FOR FORECASTS")
+
+else:
+    st.error('Unable to fetch data for the selected stock. The ticker might be delisted, the API limit reached, or there is no data available. Please select another stock.')
