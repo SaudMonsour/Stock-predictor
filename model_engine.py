@@ -66,11 +66,23 @@ class StockDataManager:
         try:
             # Fetch data up to today
             end_date = datetime.now().strftime('%Y-%m-%d')
-            data = yf.download(ticker, start="2010-01-01", end=end_date, auto_adjust=True)
+            
+            # Attempt 1: Specific date range
+            data = yf.download(ticker, start="2010-01-01", end=end_date, auto_adjust=True, progress=False)
+            
+            # Attempt 2: Fallback to period="max" if empty
+            if data is None or data.empty:
+                print(f"⚠️ Attempt 1 failed for {ticker}, trying period='max'...")
+                data = yf.Ticker(ticker).history(period="max", auto_adjust=True)
+            
             if isinstance(data.columns, pd.MultiIndex):
                 data.columns = data.columns.get_level_values(0)
-            data.reset_index(inplace=True)
-            return data
+            
+            if data is not None and not data.empty:
+                data.reset_index(inplace=True)
+                return data
+            else:
+                return None
         except Exception as e:
             st.error(f"Error fetching stock data for {ticker}: {e}")
             return None
