@@ -146,6 +146,8 @@ class MetricsCalculator:
             return 0.0
         
         df = self._prepare_dataframe(self.stock_data)
+        if df.empty:
+            return 0.0
         days = (df.index[-1] - df.index[0]).days
         years = days / 365.25
         cagr = (df['Close'].iloc[-1] / df['Close'].iloc[0]) ** (1 / years) - 1
@@ -157,6 +159,8 @@ class MetricsCalculator:
             return 0.0
         
         df = self._prepare_dataframe(self.stock_data)
+        if df.empty:
+            return 0.0
         df['Daily_Return'] = df['Close'].pct_change()
         volatility = df['Daily_Return'].std() * np.sqrt(252)
         return volatility
@@ -168,6 +172,9 @@ class MetricsCalculator:
         
         df = self._prepare_dataframe(self.stock_data)
         sp_df = self._prepare_dataframe(self.market_data)
+        
+        if df.empty or sp_df.empty:
+            return 1.0
         
         df['Daily_Return'] = df['Close'].pct_change()
         sp_df['Daily_Return'] = sp_df['Close'].pct_change()
@@ -205,6 +212,8 @@ class MetricsCalculator:
             return 0.0
         
         df = self._prepare_dataframe(self.stock_data)
+        if df.empty:
+            return 0.0
         roll_max = df['Close'].cummax()
         daily_drawdown = df['Close'] / roll_max - 1.0
         mdd = daily_drawdown.min()
