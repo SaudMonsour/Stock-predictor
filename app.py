@@ -17,7 +17,7 @@ from stock_search import StockSearchEngine
 # - Warning system for unreliable predictions
 
 # --- Streamlit Page Configuration ---
-st.set_page_config(page_title="STOCK PREDICTOR", layout="wide")
+st.set_page_config(page_title="STOCK PREDICTOR v2.5", layout="wide")
 
 # Constants
 START_DATE = (date.today() - timedelta(days=15*365)).strftime("%Y-%m-%d") # 15 years history

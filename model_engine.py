@@ -260,10 +260,13 @@ class MetricsCalculator:
     def _prepare_dataframe(data):
         """Prepare DataFrame with Date as index and ensure timezone-naive"""
         df = data.copy()
-        df['Date'] = pd.to_datetime(df['Date'])
-        # Ensure timezone naive to prevent merge errors
-        if df['Date'].dt.tz is not None:
-             df['Date'] = df['Date'].dt.tz_localize(None)
+        
+        # Ensure Date column is datetime
+        df['Date'] = pd.to_datetime(df['Date'], utc=True)
+        
+        # Remove timezone information (make naive)
+        df['Date'] = df['Date'].dt.tz_localize(None)
+        
         df.set_index('Date', inplace=True)
         return df
 
