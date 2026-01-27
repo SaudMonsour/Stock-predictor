@@ -1,9 +1,12 @@
 streamlit
-tensorflow
 yfinance
-pandas
-numpy
 plotly
 scikit-learn
-rapidfuzz
+tensorflow
+pandas
+numpy
+fredapi
+pandas-datareader
 scipy
+joblib
+matplotlib

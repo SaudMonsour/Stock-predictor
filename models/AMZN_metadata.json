@@ -1,1 +1,1 @@
-{"training_date": "2026-01-24"}
+{"training_date": "2026-01-26", "features": ["Close", "interest_rate", "treasury_10y", "inflation", "gdp", "unemployment", "vix", "market_return", "inflation_change", "real_interest_rate", "high_volatility"]}

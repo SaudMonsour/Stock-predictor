@@ -18,6 +18,8 @@ import os
 import pickle
 import json
 import streamlit as st
+import joblib
+from economic_data_fetcher import EconomicDataFetcher
 
 
 # ============================================================================
@@ -48,6 +50,7 @@ class StockDataManager:
         self.cache_ttl = cache_ttl
         self.stock_data = None
         self.market_data = None
+        self.economic_fetcher = EconomicDataFetcher()
     
     @st.cache_data(ttl=3600)
     def fetch_data(_self, ticker):
@@ -61,7 +64,9 @@ class StockDataManager:
             DataFrame with historical stock data
         """
         try:
-            data = yf.download(ticker, period="max", auto_adjust=True)
+            # Fetch data up to today
+            end_date = datetime.now().strftime('%Y-%m-%d')
+            data = yf.download(ticker, start="2010-01-01", end=end_date, auto_adjust=True)
             if isinstance(data.columns, pd.MultiIndex):
                 data.columns = data.columns.get_level_values(0)
             data.reset_index(inplace=True)
@@ -79,7 +84,7 @@ class StockDataManager:
             DataFrame with S&P 500 historical data
         """
         try:
-            sp500 = yf.download("^GSPC", period="max", auto_adjust=True)
+            sp500 = yf.download("^GSPC", start="2010-01-01", end="2021-12-31", auto_adjust=True)
             if isinstance(sp500.columns, pd.MultiIndex):
                 sp500.columns = sp500.columns.get_level_values(0)
             sp500.reset_index(inplace=True)
@@ -89,9 +94,27 @@ class StockDataManager:
             return None
     
     def load_all_data(self):
-        """Load both stock and market data"""
+        """Load both stock and market data, plus economic indicators"""
+        # 1. Fetch basic data
         self.stock_data = self.fetch_data(self.ticker)
         self.market_data = self.fetch_market_data()
+        
+        # 2. Add economic context
+        if self.stock_data is not None:
+            try:
+                start_date = self.stock_data['Date'].iloc[0].strftime('%Y-%m-%d')
+                end_date = self.stock_data['Date'].iloc[-1].strftime('%Y-%m-%d')
+                
+                indicators = self.economic_fetcher.fetch_all_indicators(start_date, end_date)
+                
+                if indicators is not None:
+                    # Align and calculate derived features
+                    aligned_data = self.economic_fetcher.align_with_trading_days(self.stock_data, indicators)
+                    self.stock_data = self.economic_fetcher.calculate_derived_features(aligned_data)
+                    print(f"✅ Enhanced data with {len(self.stock_data.columns) - 7} economic features")
+            except Exception as e:
+                print(f"⚠️ Economic data integration failed: {e}")
+        
         return self.stock_data, self.market_data
     
     def get_dataframe(self):
@@ -285,14 +308,15 @@ class DataPreprocessor:
             Tuple of (X, y) arrays
         """
         dataX, dataY = [], []
+        n_features = scaled_data.shape[1]
         for i in range(len(scaled_data) - self.time_step - 1):
-            a = scaled_data[i:(i + self.time_step), 0]
+            a = scaled_data[i:(i + self.time_step), :]
             dataX.append(a)
-            dataY.append(scaled_data[i + self.time_step, 0])
+            dataY.append(scaled_data[i + self.time_step, 0]) # Predict only 'Close' price
         
         X = np.array(dataX)
         y = np.array(dataY)
-        X = X.reshape(X.shape[0], X.shape[1], 1)
+        # X is already in (samples, time_step, features) shape
         return X, y
     
     def get_last_sequence(self, data):
@@ -306,7 +330,7 @@ class DataPreprocessor:
             Last sequence reshaped for model input
         """
         last_sequence = data[-self.time_step:]
-        return last_sequence.reshape(1, self.time_step, 1)
+        return last_sequence.reshape(1, self.time_step, data.shape[1])
     
     def get_scaler(self):
         """Return the scaler object"""
@@ -452,7 +476,8 @@ class ModelPersistence:
         
         try:
             model = load_model(self.model_path, 
-                             custom_objects={'_attention_sum': ModelBuilder._attention_sum})
+                             custom_objects={'_attention_sum': ModelBuilder._attention_sum},
+                             safe_mode=False)
             return model
         except Exception as e:
             st.warning(f"Could not load model: {e}")
@@ -566,20 +591,42 @@ class PredictionEngine:
         five_years_ago = data['Date'].iloc[-1] - timedelta(days=5*365)
         df_filtered = data[data['Date'] > five_years_ago].copy()
         
-        # Prepare data
-        df_close = df_filtered[['Close']]
-        scaled_data = self.preprocessor.scale_data(df_close)
+        # Prepare data - select appropriate features
+        # Always put 'Close' first so it's at index 0
+        feature_cols = ['Close']
+        
+        # Add economic features if available
+        potential_features = [
+            'interest_rate', 'treasury_10y', 'inflation', 'gdp', 
+            'unemployment', 'vix', 'market_return',
+            'inflation_change', 'real_interest_rate', 'high_volatility'
+        ]
+        
+        for col in potential_features:
+            if col in df_filtered.columns:
+                feature_cols.append(col)
+        
+        print(f"🧠 Training with features: {feature_cols}")
+        
+        df_features = df_filtered[feature_cols]
+        scaled_data = self.preprocessor.scale_data(df_features)
         X, y = self.preprocessor.create_sequences(scaled_data)
         
         # Build and train model
-        builder = ModelBuilder(input_shape=(X.shape[1], 1))
+        # Input shape is (time_steps, n_features)
+        n_features = X.shape[2]
+        builder = ModelBuilder(input_shape=(X.shape[1], n_features))
         self.model = builder.build_model()
         self.model.fit(X, y, batch_size=batch_size, epochs=epochs, verbose=0)
         
         # Save artifacts
         self.persistence.save_model(self.model)
         self.persistence.save_scaler(self.preprocessor.get_scaler())
-        self.persistence.save_metadata({"training_date": datetime.now().strftime("%Y-%m-%d")})
+        feature_info = {
+            "training_date": datetime.now().strftime("%Y-%m-%d"),
+            "features": feature_cols
+        }
+        self.persistence.save_metadata(feature_info)
         
         return self.model
     
@@ -620,21 +667,39 @@ class PredictionEngine:
         
         future_predictions = []
         current_sequence = initial_sequence.copy()
+        n_features = current_sequence.shape[2]
         
         for _ in range(days):
             # Predict next step with optimized inference
             next_step = self.model(current_sequence, training=False).numpy()
-            future_predictions.append(next_step[0, 0])
+            predicted_price = next_step[0, 0]
+            future_predictions.append(predicted_price)
             
+            # Construct next input vector
+            if n_features > 1:
+                # If we have multiple features (Price + Economics),
+                # use predicted price for feature 0, and repeat last values for others (Persistence)
+                last_exog = current_sequence[0, -1, 1:] # Get last known exogenous values
+                next_vector = np.concatenate([[predicted_price], last_exog])
+                next_vector = next_vector.reshape(1, 1, n_features)
+            else:
+                next_vector = next_step.reshape(1, 1, 1)
+                
             # Update sequence: remove first, add new prediction
-            next_step_reshaped = next_step.reshape(1, 1, 1)
             current_sequence = np.append(current_sequence[:, 1:, :], 
-                                        next_step_reshaped, axis=1)
+                                        next_vector, axis=1)
         
         # Inverse transform to original scale
-        future_predictions = np.array(future_predictions).reshape(-1, 1)
-        future_predictions = self.preprocessor.inverse_transform(future_predictions)
-        return future_predictions
+        # Create dummy array with same shape as training data for inverse transform
+        # We only care about the first column (Close price)
+        dummy_array = np.zeros((len(future_predictions), n_features))
+        dummy_array[:, 0] = np.array(future_predictions).flatten()
+        
+        # Inverse transform and extract just the price column
+        rescalsed = self.preprocessor.scaler.inverse_transform(dummy_array)
+        final_predictions = rescalsed[:, 0].reshape(-1, 1)
+        
+        return final_predictions
     
     def should_retrain(self, max_age_days=49):
         """
@@ -842,25 +907,78 @@ class StockModelEngine:
             trained_new = False
         
         # Prepare data for prediction
-        df_close = self.stock_data[['Close']]
+        # Select appropriate features matching training logic
+        feature_cols = ['Close']
+        potential_features = [
+            'interest_rate', 'treasury_10y', 'inflation', 'gdp', 
+            'unemployment', 'vix', 'market_return',
+            'inflation_change', 'real_interest_rate', 'high_volatility'
+        ]
+        
+        # Check which features exist in valid columns
+        # Note: We should ideally save the exact feature list in metadata
+        # giving best-effort here based on available columns
+        for col in potential_features:
+            if col in self.stock_data.columns:
+                feature_cols.append(col)
+                
+        # If we loaded an existing model, verify features match what scaler expects
+        if not trained_new:
+            # Try to check metadata for exact features
+            metadata = self.prediction_engine.persistence.load_metadata()
+            if metadata and "features" in metadata:
+                saved_features = metadata["features"]
+                # Ensure we have all needed features
+                missing = [f for f in saved_features if f not in self.stock_data.columns]
+                if not missing:
+                    feature_cols = saved_features
+                else:
+                    print(f"⚠️ Missing features for loaded model: {missing}. Force retraining.")
+                    # Force retrain if data shape doesn't match
+                    self.prediction_engine.train(self.stock_data)
+                    trained_new = True
+                    # Re-determine feature cols after training
+                    feature_cols = ['Close']
+                    for col in potential_features:
+                        if col in self.stock_data.columns:
+                            feature_cols.append(col)
+        
+        df_features = self.stock_data[feature_cols]
         preprocessor = self.prediction_engine.get_preprocessor()
         
         # Ensure scaler is fitted with current data
-        # This fixes the NotFittedError when loading existing models
         if not trained_new:
-            # If we loaded an existing model, the scaler is already loaded
-            # but we still need to verify it's fitted
             try:
-                # Try to transform - if scaler is already fitted, this will work
-                scaled_data = preprocessor.transform_data(df_close)
-            except:
-                # If transform fails, fit the scaler first
-                scaled_data = preprocessor.scale_data(df_close)
+                scaled_data = preprocessor.transform_data(df_features)
+            except Exception as e:
+                print(f"⚠️ Transform failed: {e}. Refitting scaler.")
+                scaled_data = preprocessor.scale_data(df_features)
         else:
-            # For newly trained models, scaler is already fitted during training
-            scaled_data = preprocessor.transform_data(df_close)
+            scaled_data = preprocessor.transform_data(df_features)
         
         last_sequence = preprocessor.get_last_sequence(scaled_data)
+        
+        # CRITICAL CHECK: Verify model input shape matches data shape
+        # This prevents the "expected axis -1 of input shape to have value 1, but received 11" error
+        model = self.prediction_engine.get_model()
+        if model is not None:
+            # Model input shape is typically (None, time_steps, n_features)
+            # We check the last dimension (n_features)
+            expected_features = model.input_shape[-1]
+            actual_features = last_sequence.shape[-1]
+            
+            if expected_features != actual_features:
+                print(f"⚠️ Shape mismatch! Model expects {expected_features} features, but data has {actual_features}.")
+                print("🔄 Forcing model retraining with correct features...")
+                
+                # Force retrain
+                self.prediction_engine.train(self.stock_data)
+                trained_new = True
+                
+                # Re-process data with new model/scaler
+                # The scaler would have been updated during training
+                scaled_data = preprocessor.transform_data(df_features)
+                last_sequence = preprocessor.get_last_sequence(scaled_data)
         
         # Generate predictions
         future_prices = self.prediction_engine.predict_future(forecast_days, last_sequence)
@@ -989,7 +1107,7 @@ class StockModelEngine:
             prediction_change, self.stock_data, metrics, confidence_level
         )
     
-    def run_ensemble_prediction(self, forecast_days, initial_capital=10000, use_ensemble=True):
+    def run_ensemble_prediction(self, forecast_days, initial_capital=10000, use_ensemble=False):
         """
         Execute prediction with ensemble models and enhanced features
         
@@ -1046,17 +1164,21 @@ class StockModelEngine:
             confidence_data['confidence_level']
         )
         
-        # Recalculate wealth with ensemble price
+        # Override final price with Best Case (Upper Confidence Bound) as requested
+        # "always the best case is the correct one"
+        final_price = confidence_data['confidence_high']
+        
+        # Recalculate wealth based on Best Case
         growth_factor = final_price / self.current_price
         final_wealth = initial_capital * growth_factor
         
-        # Calculate best/worst case scenarios
+        # Calculate best/worst case scenarios for the results dictionary
         best_case_wealth = initial_capital * (confidence_data['confidence_high'] / self.current_price)
         worst_case_wealth = initial_capital * (confidence_data['confidence_low'] / self.current_price)
         
         # Update results with enhanced features
         basic_results.update({
-            'final_price': final_price,  # May be ensemble prediction
+            'final_price': final_price,  # Now using Best Case
             'final_wealth': final_wealth,
             'confidence': confidence_data,
             'risk_profile': risk_profile,

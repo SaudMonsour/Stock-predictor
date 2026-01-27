@@ -16,11 +16,11 @@ from stock_search import StockSearchEngine
 # - Natural language explanations
 # - Warning system for unreliable predictions
 
-# Page Config
-st.set_page_config(page_title="Stock Prediction Dashboard", layout="wide")
+# --- Streamlit Page Configuration ---
+st.set_page_config(page_title="STOCK PREDICTOR", layout="wide")
 
 # Constants
-START_DATE = "2010-01-01"
+START_DATE = (date.today() - timedelta(days=15*365)).strftime("%Y-%m-%d") # 15 years history
 TODAY = date.today().strftime("%Y-%m-%d")
 
 # Apply CSS
@@ -73,13 +73,14 @@ st.sidebar.markdown("---")
 run_prediction = st.sidebar.button("RUN PREDICTION MODEL")
 
 # --- Main Dashboard ---
-ui.render_header(selected_ticker)
-
 # Load Data
 with st.spinner('ESTABLISHING DATALINK...'):
     stock_data, sp500_data = engine.get_stock_data(selected_ticker)
 
 if stock_data is not None:
+    # Render header with selected ticker
+    ui.render_header(selected_ticker)
+    
     # Calculate Historical Metrics immediately
     metrics = engine.calculate_metrics(stock_data, sp500_data)
     
