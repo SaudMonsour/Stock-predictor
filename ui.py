@@ -81,8 +81,8 @@ def render_header(ticker):
     st.markdown(f"""
     <div class="header-container">
         <div>
-            <div class="app-title">QUANTUM {ticker}</div>
-            <div style="color: #888; font-size: 0.9rem;">NEURAL NETWORK PREDICTION PROTOCOL</div>
+            <div class="app-title">STOCK PREDICTOR {ticker}</div>
+            <div style="color: #888; font-size: 0.9rem;">ADVANCED FORECASTING SYSTEM</div>
         </div>
         <div class="live-indicator">● SYSTEM ONLINE</div>
     </div>

@@ -66,8 +66,9 @@ forecast_options = ["1 Day", "1 Week", "1 Month", "3 Months", "6 Months", "1 Yea
 forecast_horizon = st.sidebar.selectbox("FORECAST HORIZON", forecast_options)
 
 # Enhanced features toggle
-use_ensemble = st.sidebar.checkbox("Use Ensemble Models", value=True, 
-                                    help="Combine LSTM with Linear Regression and Random Forest")
+# Enhanced features toggle replaced with fixed single model usage
+use_ensemble = False # Forced to False as per user request to disable ensemble
+# st.sidebar.checkbox("Use Ensemble Models", value=False, help="Combine LSTM with Linear Regression and Random Forest")
 
 st.sidebar.markdown("---")
 run_prediction = st.sidebar.button("RUN PREDICTION MODEL")
