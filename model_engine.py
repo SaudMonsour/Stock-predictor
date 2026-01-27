@@ -96,7 +96,8 @@ class StockDataManager:
             DataFrame with S&P 500 historical data
         """
         try:
-            sp500 = yf.download("^GSPC", start="2010-01-01", end="2021-12-31", auto_adjust=True)
+            end_date = datetime.now().strftime('%Y-%m-%d')
+            sp500 = yf.download("^GSPC", start="2010-01-01", end=end_date, auto_adjust=True, progress=False)
             if isinstance(sp500.columns, pd.MultiIndex):
                 sp500.columns = sp500.columns.get_level_values(0)
             sp500.reset_index(inplace=True)
@@ -196,7 +197,15 @@ class MetricsCalculator:
         
         covariance = aligned_data.cov().iloc[0, 1]
         market_variance = aligned_data['Market'].var()
+        
+        if market_variance == 0 or np.isnan(market_variance):
+            return 1.0
+            
         beta = covariance / market_variance
+        
+        if pd.isna(beta) or np.isinf(beta):
+            return 1.0
+            
         return beta
     
     def calculate_sharpe_ratio(self, risk_free_rate=0.04):
