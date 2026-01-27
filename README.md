@@ -36,5 +36,3 @@ The model doesn't just guess; it learns from 11 specific features:
 ## How to use it
 
 Once the app is running, just pick a stock from the list on the left (like Apple or Tesla). The system will automatically download the data, train a new model for that specific stock right then and there, and show you the prediction.
-
-*(Note: The application comes pre-configured with a FRED API key for economic data, so it works out of the box!)*
