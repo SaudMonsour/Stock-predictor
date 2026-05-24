@@ -8,9 +8,11 @@ import pandas as pd
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import Sequential, Model, load_model
-from tensorflow.keras.layers import (Input, Conv1D, MaxPooling1D, Bidirectional, 
-                                     LSTM, Dense, Dropout, Activation, Multiply, 
+from tensorflow.keras.layers import (Input, Conv1D, MaxPooling1D, Bidirectional,
+                                     LSTM, Dense, Dropout, Activation, Multiply,
                                      Permute, Lambda, RepeatVector, Flatten)
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+from tensorflow.keras.optimizers import Adam
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.linear_model import LinearRegression
 from datetime import date, timedelta, datetime
@@ -462,15 +464,18 @@ class ModelBuilder:
         """Custom layer for attention summation"""
         return tf.reduce_sum(x, axis=1)
     
-    def compile_model(self, optimizer='adam', loss='mean_squared_error'):
+    def compile_model(self, optimizer=None, loss='huber'):
         """
         Compile the model
-        
+
         Args:
-            optimizer: Optimizer to use
-            loss: Loss function
+            optimizer: Optimizer to use (defaults to Adam with gradient clipping)
+            loss: Loss function (Huber is robust to price spikes/outliers)
         """
         if self.model is not None:
+            # Gradient clipping keeps the recursive multi-step forecast stable
+            if optimizer is None:
+                optimizer = Adam(learning_rate=1e-3, clipnorm=1.0)
             self.model.compile(optimizer=optimizer, loss=loss)
     
     def get_model(self):
@@ -611,7 +616,7 @@ class PredictionEngine:
         self.preprocessor = DataPreprocessor(time_step=60)
         self.persistence = ModelPersistence(ticker, model_dir)
     
-    def train(self, data, epochs=10, batch_size=64):
+    def train(self, data, epochs=100, batch_size=64):
         """
         Train a new model
         
@@ -653,7 +658,16 @@ class PredictionEngine:
         n_features = X.shape[2]
         builder = ModelBuilder(input_shape=(X.shape[1], n_features))
         self.model = builder.build_model()
-        self.model.fit(X, y, batch_size=batch_size, epochs=epochs, verbose=0)
+
+        # Stop once validation loss stops improving and restore the best weights,
+        # so more epochs improve accuracy without overfitting recent data.
+        callbacks = [
+            EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True),
+            ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr=1e-5)
+        ]
+        # Chronological validation split (no shuffle) for time-series data
+        self.model.fit(X, y, batch_size=batch_size, epochs=epochs, verbose=0,
+                       validation_split=0.1, shuffle=False, callbacks=callbacks)
         
         # Save artifacts
         self.persistence.save_model(self.model)
